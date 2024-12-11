@@ -25,24 +25,8 @@ def get_arguments():
 
 import torch
 
+# TODO text/fix
 def run_layercam_for_label(input_, vgg_layercam, imagenet_class_idx, label_name):
-    """
-    Run LayerCAM for a manually chosen label name from the ImageNet class index.
-
-    # Arguments
-        input_: Torch Tensor of the input image, shape [1, 3, H, W], already preprocessed.
-        vgg_layercam: An instance of LayerCAM initialized with the desired model/layer.
-        imagenet_class_idx: A dictionary mapping string class indices to [wnid, label].
-        label_name: The human-readable label name (e.g. "goldfish").
-
-    # Returns
-        norm_cam: The normalized CAM result for the specified label.
-    """
-
-    # Find the class_idx for the given label_name by searching in imagenet_class_idx
-    # The structure of imagenet_class_idx is something like:
-    # { "0":["n01440764","tench"], "1":["n01443537","goldfish"], ... }
-    # We want to find the key whose value's second element matches label_name
     class_idx = None
     for k, v in imagenet_class_idx.items():
         if v[1] == label_name:
@@ -52,8 +36,6 @@ def run_layercam_for_label(input_, vgg_layercam, imagenet_class_idx, label_name)
     if class_idx is None:
         raise ValueError(f"Label {label_name} not found in the ImageNet index.")
 
-    # Now we have the class_idx, we can run vgg_layercam with it
-    # This will trigger the forward/backward pass as defined in the LayerCAM class
     norm_cam = vgg_layercam(input_, class_idx=class_idx)
 
     return norm_cam
@@ -61,8 +43,6 @@ def run_layercam_for_label(input_, vgg_layercam, imagenet_class_idx, label_name)
 
 if __name__ == '__main__':
     args = get_arguments()
-
-
 
     # Load the imagenet class index
     json_path = os.path.join("utils", "imagenet_class_index.json")
@@ -87,10 +67,9 @@ if __name__ == '__main__':
         vgg_layercam = LayerCAM(vgg_model_dict)
         predicted_class = vgg(input_).max(1)[-1].item()
 
-        #label_name = "goldfish"  # the label you want to visualize
+        #label_name = "goldfish"  
         #cam_map = run_layercam_for_label(input_, vgg_layercam, imagenet_class_idx, label_name)
 
-        print(predicted_class)
         predicted_label = imagenet_class_idx[str(predicted_class)][1]
         print("Predicted label name:", predicted_label, " Index: ", predicted_class)
 
@@ -172,6 +151,3 @@ if __name__ == '__main__':
         combined_mul_map.cpu(), 
         save_path=f'./vis/{base_name}_combined_mul'
     )
-
-    # Visualize all original maps with different colors on top of the input: (TODO fix)
-    #visualize_colored_maps(input_.cpu().detach(), maps, save_path='./vis/colored_overlay.png', alpha=0.5)
