@@ -39,18 +39,27 @@ class LayerCAM(BaseCAM):
         self.model_arch.zero_grad()
         # Backward pass with specified target
         logit.backward(gradient=one_hot_output, retain_graph=True)
-        activations = self.activations['value'].clone().detach()
-        gradients = self.gradients['value'].clone().detach()
-        b, k, u, v = activations.size()
         
-        with torch.no_grad():
-            activation_maps = activations * F.relu(gradients)
-            cam = torch.sum(activation_maps, dim=1).unsqueeze(0)    
-            cam = F.interpolate(cam, size=(h, w), mode='bicubic', align_corners=False)      
-            cam_min, cam_max = cam.min(), cam.max()
-            norm_cam = (cam - cam_min).div(cam_max - cam_min + 1e-8).data
+        gradients = self.gradients
+        activations = self.activations
+        activations.reverse()
+        # now we have gradients and activations across all layers and channels
 
-        return norm_cam
+        # TODO attention over those 
+
+        #LayerCAM:
+        norm_cams = []
+        with torch.no_grad():
+            for i in range(len(activations)):
+                activation_maps = activations[i] * F.relu(gradients[i])
+                cam = torch.sum(activation_maps, dim=1).unsqueeze(0)    
+                cam = F.interpolate(cam, size=(h, w), mode='bicubic', align_corners=False)      
+                cam_min, cam_max = cam.min(), cam.max()
+                norm_cam = (cam - cam_min).div(cam_max - cam_min + 1e-8).data
+                norm_cams.append(norm_cam)
+        return norm_cams
 
     def __call__(self, input, class_idx=None, retain_graph=False):
+        self.gradients = []
+        self.activations = []
         return self.forward(input, class_idx, retain_graph)
