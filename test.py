@@ -60,26 +60,33 @@ if __name__ == '__main__':
     base_name = os.path.splitext(os.path.basename(args.img_path))[0]
 
     vgg = models.vgg16(weights=VGG16_Weights.IMAGENET1K_V1).eval()
-    maps = []
+
+    layer_names = []
+
     for i, layer_idx in enumerate(args.layer_id, 1):
-        layer_name = 'features_' + str(layer_idx)
-        vgg_model_dict = dict(type='vgg16', arch=vgg, layer_name=layer_name, input_size=(224, 224))
-        vgg_layercam = LayerCAM(vgg_model_dict)
-        predicted_class = vgg(input_).max(1)[-1].item()
+        layer_names.append('features_' + str(layer_idx))
 
-        #label_name = "goldfish"  
-        #cam_map = run_layercam_for_label(input_, vgg_layercam, imagenet_class_idx, label_name)
+    vgg_model_dict = dict(type='vgg16', arch=vgg, layer_names=layer_names, input_size=(224, 224))
+    vgg_layercam = LayerCAM(vgg_model_dict)
+    predicted_class = vgg(input_).max(1)[-1].item()
 
-        predicted_label = imagenet_class_idx[str(predicted_class)][1]
-        print("Predicted label name:", predicted_label, " Index: ", predicted_class)
 
-        layercam_map = vgg_layercam(input_)
-        maps.append(layercam_map)
 
+    #label_name = "goldfish"  
+    #cam_map = run_layercam_for_label(input_, vgg_layercam, imagenet_class_idx, label_name)
+
+    predicted_label = imagenet_class_idx[str(predicted_class)][1]
+    print("Predicted label name:", predicted_label, " Index: ", predicted_class)
+
+    maps = vgg_layercam(input_)
+    
+    exit()
+
+    for i in range(len(maps)):
         # Use the base_name in the output filenames
         basic_visualize_separate(
             input_.cpu().detach(),
-            layercam_map.type(torch.FloatTensor).cpu(),
+            maps[i].type(torch.FloatTensor).cpu(),
             save_path=f'./vis/{base_name}_stage_{i}'
         )
 

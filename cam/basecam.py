@@ -17,31 +17,39 @@ class BaseCAM(object):
 
     def __init__(self, model_dict):
         model_type = model_dict['type']
-        layer_name = model_dict['layer_name']
+        layer_names = model_dict['layer_names']
         
         self.model_arch = model_dict['arch']
         self.model_arch.eval()
         if torch.cuda.is_available():
           self.model_arch.cuda()
-        self.gradients = dict()
-        self.activations = dict()
+        self.gradients = []
+        self.activations = []
 
         def backward_hook(module, grad_input, grad_output):
             if torch.cuda.is_available():
-              self.gradients['value'] = grad_output[0].cuda()
+              self.gradients.append(grad_output[0].clone().detach().cuda())
             else:
-              self.gradients['value'] = grad_output[0]
+              self.gradients.append(grad_output[0].clone().detach())
             return None
 
         def forward_hook(module, input, output):
             if torch.cuda.is_available():
-              self.activations['value'] = output.cuda()
+              self.activations.append(output.clone().detach().cuda())
             else:
-              self.activations['value'] = output
+              self.activations.append(output.clone().detach())
             return None
 
+        self.target_layers = []
+
         if 'vgg' in model_type.lower():
-            self.target_layer = find_vgg_layer(self.model_arch, layer_name)
+            for layer_name in layer_names:
+                self.target_layers.append(find_vgg_layer(self.model_arch, layer_name))
+            for target_layer in self.target_layers:
+                target_layer.register_forward_hook(forward_hook)
+                target_layer.register_backward_hook(backward_hook)
+        
+        '''
         elif 'resnet' in model_type.lower():
             self.target_layer = find_resnet_layer(self.model_arch, layer_name)
         elif 'densenet' in model_type.lower():
@@ -57,10 +65,12 @@ class BaseCAM(object):
         elif 'mobilenet' in model_type.lower():
             self.target_layer = find_mobilenet_layer(self.model_arch, layer_name)
         else:
-            self.target_layer = find_layer(self.model_arch, layer_name)
-
+            self.target_layer = find_layer(self.model_arch, layer_name)     
         self.target_layer.register_forward_hook(forward_hook)
         self.target_layer.register_backward_hook(backward_hook)
+        '''
+
+
 
     def forward(self, input, class_idx=None, retain_graph=False):
         return None
