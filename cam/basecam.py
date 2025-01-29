@@ -1,5 +1,5 @@
 '''
-Part of code borrows from https://github.com/1Konny/gradcam_plus_plus-pytorch
+based off of code from https://github.com/PengtaoJiang/LayerCAM-jittor
 '''
 
 import torch

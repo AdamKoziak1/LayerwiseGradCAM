@@ -11,7 +11,7 @@ from cam.camformer import *
 from torchvision.models import VGG16_Weights
 
 def get_arguments():
-    parser = argparse.ArgumentParser(description='The Pytorch code of LayerCAM')
+    parser = argparse.ArgumentParser(description='The Pytorch code of CAMFormer')
 
     #parser.add_argument("--img_path", type=str, default='images/bulbul.JPEG', help='Path of test image') # bird
     #parser.add_argument("--img_path", type=str, default='images/bullet_train.JPEG', help='Path of test image') # train
@@ -26,7 +26,7 @@ def get_arguments():
 import torch
 
 # TODO text/fix
-def run_layercam_for_label(input_, vgg_layercam, imagenet_class_idx, label_name):
+def run_camformer_for_label(input_, vgg_camformer, imagenet_class_idx, label_name):
     class_idx = None
     for k, v in imagenet_class_idx.items():
         if v[1] == label_name:
@@ -36,7 +36,7 @@ def run_layercam_for_label(input_, vgg_layercam, imagenet_class_idx, label_name)
     if class_idx is None:
         raise ValueError(f"Label {label_name} not found in the ImageNet index.")
 
-    norm_cam = vgg_layercam(input_, class_idx=class_idx)
+    norm_cam = vgg_camformer(input_, class_idx=class_idx)
 
     return norm_cam
 
@@ -67,19 +67,23 @@ if __name__ == '__main__':
         layer_names.append('features_' + str(layer_idx))
 
     vgg_model_dict = dict(type='vgg16', arch=vgg, layer_names=layer_names, input_size=(224, 224))
-    vgg_layercam = CAMFormer(vgg_model_dict)
+    vgg_camformer = CAMFormer(vgg_model_dict)
     predicted_class = vgg(input_).max(1)[-1].item()
 
 
 
     #label_name = "goldfish"  
-    #cam_map = run_layercam_for_label(input_, vgg_layercam, imagenet_class_idx, label_name)
+    #cam_map = run_camformer_for_label(input_, vgg_camformer, imagenet_class_idx, label_name)
 
     predicted_label = imagenet_class_idx[str(predicted_class)][1]
     print("Predicted label name:", predicted_label, " Index: ", predicted_class)
 
-    maps = vgg_layercam(input_)
+    maps = vgg_camformer(input_)
+    print("len: ", len(maps))
     
+   # print(maps)
+    #print(len(maps), [maps[i].shape for i in range(len(maps))])
+
     exit()
 
     for i in range(len(maps)):
