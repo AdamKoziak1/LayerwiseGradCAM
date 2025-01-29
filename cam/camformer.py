@@ -3,7 +3,7 @@ import torch.nn.functional as F
 from cam.basecam import *
 
 
-class LayerCAM(BaseCAM):
+class CAMFormer(BaseCAM):
 
     """
         ScoreCAM, inherit from BaseCAM
@@ -47,17 +47,7 @@ class LayerCAM(BaseCAM):
 
         # TODO attention over those 
 
-        #LayerCAM:
-        norm_cams = []
-        with torch.no_grad():
-            for i in range(len(activations)):
-                activation_maps = activations[i] * F.relu(gradients[i])
-                cam = torch.sum(activation_maps, dim=1).unsqueeze(0)    
-                cam = F.interpolate(cam, size=(h, w), mode='bicubic', align_corners=False)      
-                cam_min, cam_max = cam.min(), cam.max()
-                norm_cam = (cam - cam_min).div(cam_max - cam_min + 1e-8).data
-                norm_cams.append(norm_cam)
-        return norm_cams
+        return None
 
     def __call__(self, input, class_idx=None, retain_graph=False):
         self.gradients = []

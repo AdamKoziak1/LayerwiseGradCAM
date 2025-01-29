@@ -7,7 +7,7 @@ import os
 import json
 
 from utils import *
-from cam.layercam import *
+from cam.camformer import *
 from torchvision.models import VGG16_Weights
 
 def get_arguments():
@@ -67,7 +67,7 @@ if __name__ == '__main__':
         layer_names.append('features_' + str(layer_idx))
 
     vgg_model_dict = dict(type='vgg16', arch=vgg, layer_names=layer_names, input_size=(224, 224))
-    vgg_layercam = LayerCAM(vgg_model_dict)
+    vgg_layercam = CAMFormer(vgg_model_dict)
     predicted_class = vgg(input_).max(1)[-1].item()
 
 
