@@ -1,7 +1,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision.models import vgg16  # or any other model if needed
+
+import torchvision.models as models
+from torchvision.models import VGG16_Weights
 
 # Import your find_*_layer helpers or implement them directly here.
 # If you have them in utils, just import them:
@@ -30,7 +32,6 @@ class CAMFormerModule(nn.Module):
 
     def __init__(
         self,
-        backbone: nn.Module,
         layer_names,
         hidden_dim=128,
         num_heads=4,
@@ -46,6 +47,9 @@ class CAMFormerModule(nn.Module):
         :param num_classes: for class embedding if Grad-CAM style usage is desired.
         """
         super().__init__()
+
+        backbone = models.vgg16(weights=VGG16_Weights.IMAGENET1K_V1).eval()
+
         self.model_arch = backbone.eval()  # Keep in eval mode for hooking, or remove if training end-to-end
         self.layer_names = layer_names
         self.hidden_dim = hidden_dim
@@ -111,10 +115,19 @@ class CAMFormerModule(nn.Module):
 
         # Step 5: (Re-)Register your "real" forward/backward hooks for Grad-CAM
         def forward_hook_fn(module, inp, out):
-            self.activations.append(out.clone().detach())
+            self.activations.append(out.clone().requires_grad_(True))
 
         def backward_hook_fn(module, grad_in, grad_out):
-            self.gradients.append(grad_out[0].clone().detach())
+            self.gradients.append(grad_out[0].clone().requires_grad_(True))
+
+        # def forward_hook_fn(module, inp, out):
+        #     # Clone with requires_grad=True to ensure the tensor is connected to the computation graph
+        #     self.activations.append(out.clone().detach().requires_grad_(True))
+
+        # def backward_hook_fn(module, grad_in, grad_out):
+        #     # Clone with requires_grad=True to ensure gradients are connected
+        #     self.gradients.append(grad_out[0].clone().detach().requires_grad_(True))
+
 
         self.target_layers = []
         for layer_n in self.layer_names:
@@ -164,7 +177,9 @@ class CAMFormerModule(nn.Module):
             #reset grad so VGG isn't trained
             self.model_arch.zero_grad()
 
-        # 2) Encode each layer’s activation into hidden_dim tokens
+            self.gradients.reverse()
+
+        # 2) Encode each layer’s activations into hidden_dim tokens
         layer_tokens = []
         for act, enc in zip(self.activations, self.encoders):
             act = act.to(self.device)
@@ -194,7 +209,14 @@ class CAMFormerModule(nn.Module):
 
         # 5) Split back into layer slices and decode
         offset = 1
+
+        
         reconstructed = []
+        masks = []
+        
+        b_x, c_x, h_x, w_x = x.shape
+        cam = torch.zeros((b_x,1,h_x,w_x), dtype=torch.float, device=self.device)
+
         for (act, dec) in zip(self.activations, self.decoders):
             bsz, c_i, h_i, w_i = act.shape
             n_tokens = h_i * w_i
@@ -207,7 +229,38 @@ class CAMFormerModule(nn.Module):
             decoded = dec(slice_)                  # => [B, c_i, h_i, w_i]
             reconstructed.append(decoded)
 
-        return reconstructed
+            channel_sum = decoded.sum(axis=1).unsqueeze(1)
+            masks.append(channel_sum)
+
+            cam += F.interpolate(channel_sum, size=(224,224), mode='bicubic', align_corners=False) 
+            cam_min, cam_max = cam.min(), cam.max()
+            norm_cam = (cam - cam_min) / (cam_max - cam_min + 1e-8)
+        # cam: [B,1,224,224]
+        threshold=0.5
+        bs = cam.size(0)
+        out_boxes = []
+        for i in range(bs):
+            cam_2d = norm_cam[i, 0]  # shape [224,224]
+            
+            print(f"cam_2d: {cam_2d.requires_grad}")
+            mask = (cam_2d >= threshold)
+            print(f"mask: {mask.requires_grad}")
+            coords = mask.nonzero(as_tuple=False)
+            print(f"coords: {coords.requires_grad}")
+            if coords.numel() == 0:
+                # no region found
+                out_boxes.append([0, 0, 1, 1])
+            else:
+                ymin = coords[:,0].min().item()
+                ymax = coords[:,0].max().item()
+                xmin = coords[:,1].min().item()
+                xmax = coords[:,1].max().item()
+                out_boxes.append([xmin, ymin, xmax, ymax])
+        bbox = torch.tensor(out_boxes, dtype=torch.float, device=cam.device)
+        print(f"bbox: {bbox.requires_grad}")
+
+        output_dict = dict(act=self.activations, grad=self.gradients, masks=reconstructed, cam=norm_cam, bbox=bbox)
+        return output_dict
 
     def _clear_hooks_storage(self):
         """
@@ -234,9 +287,7 @@ class CAMFormerModule(nn.Module):
 if __name__ == "__main__":
     layer_names = ["features.4", "features.9", "features.16", "features.23", "features.30"] # all max pool layers
 
-    vgg = vgg16(pretrained=True)
     model = CAMFormerModule(
-        backbone=vgg,
         layer_names=layer_names,
         hidden_dim=128,
         num_heads=4,
@@ -245,8 +296,19 @@ if __name__ == "__main__":
     )
 
     # Example usage
-    images = torch.randn(1, 3, 224, 224).cuda()
-    recon = model(images, class_idx=None, do_gradcam=True)  # returns a list of per-layer [B, c_i, H, W]
+    images = torch.randn(5, 3, 224, 224).cuda()
+
+    output_dict = model(images, class_idx=None, do_gradcam=True)  # returns a list of per-layer [B, c_i, H, W]
+    activations = output_dict["act"]
+    gradients = output_dict["grad"]
+    recon = output_dict["masks"]
+    cam = output_dict["cam"]
+    bbox = output_dict["bbox"]
+
+    
     print(len(recon))
     for i in range(len(recon)):
-        print(recon[i].shape)
+        print(activations[i].shape, gradients[i].shape, recon[i].shape)
+
+    print(cam.shape)
+    print(bbox.shape)
