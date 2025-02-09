@@ -7,7 +7,6 @@ transformation.
 """
 from PIL import Image
 import matplotlib.pyplot as plt
-
 import torchvision.transforms as transforms
 import torchvision.transforms.functional as F
 import torch
@@ -75,9 +74,9 @@ def apply_transforms(image, size=224):
         transforms.Normalize(means, stds)
     ])
 
-    tensor = transform(image).unsqueeze(0)
+    tensor = transform(image)#.unsqueeze(0)
 
-    tensor.requires_grad = True
+    tensor.requires_grad = False
 
     return tensor
 
@@ -354,9 +353,6 @@ def basic_visualize_separate(input_, gradients, save_path=None, weight=None, cma
         plt.gca().yaxis.set_major_locator(plt.NullLocator())
         plt.savefig(overlay_path, transparent=True, facecolor='none', bbox_inches='tight', pad_inches=0)
         plt.close()
-
-import matplotlib.pyplot as plt
-import numpy as np
 
 def basic_visualize_sequence(input_, gradients_list, save_path=None, cmap='viridis', alpha=0.7):
     """

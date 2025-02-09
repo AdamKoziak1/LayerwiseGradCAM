@@ -6,9 +6,6 @@ import json
 from collections.abc import Mapping
 from importlib_resources import path
 
-from . import resources
-
-
 class ImageNetIndex(Mapping):
     """Interface to retrieve ImageNet class indeces from class names.
 
@@ -29,7 +26,7 @@ class ImageNetIndex(Mapping):
     def __init__(self):
         self._index = {}
 
-        with path(resources, 'imagenet_class_index.json') as source_path:
+        with path('imagenet_class_index.json') as source_path:
             with open(str(source_path), 'r') as source:
                 data = json.load(source)
 

@@ -5,18 +5,9 @@ import torch.nn.functional as F
 import torchvision.models as models
 from torchvision.models import VGG16_Weights
 
-# Import your find_*_layer helpers or implement them directly here.
-# If you have them in utils, just import them:
-# from utils import find_vgg_layer, ...
-
 def find_vgg_layer(model, layer_name):
-    """
-    Example stub: your real implementation may differ.
-    This function should return the nn.Module corresponding to layer_name,
-    such as "features.29" in vgg16, etc.
-    """
-    target_module = dict(model.named_modules())[layer_name]
-    return target_module
+    #This function should return the nn.Module corresponding to layer_name, such as "features.29" in vgg16, etc.
+    return dict(model.named_modules())[layer_name]
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -114,19 +105,19 @@ class CAMFormerModule(nn.Module):
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 
         # Step 5: (Re-)Register your "real" forward/backward hooks for Grad-CAM
-        def forward_hook_fn(module, inp, out):
-            self.activations.append(out.clone().requires_grad_(True))
-
-        def backward_hook_fn(module, grad_in, grad_out):
-            self.gradients.append(grad_out[0].clone().requires_grad_(True))
-
         # def forward_hook_fn(module, inp, out):
-        #     # Clone with requires_grad=True to ensure the tensor is connected to the computation graph
-        #     self.activations.append(out.clone().detach().requires_grad_(True))
+        #     self.activations.append(out.clone().requires_grad_(True))
 
         # def backward_hook_fn(module, grad_in, grad_out):
-        #     # Clone with requires_grad=True to ensure gradients are connected
-        #     self.gradients.append(grad_out[0].clone().detach().requires_grad_(True))
+        #     self.gradients.append(grad_out[0].clone().requires_grad_(True))
+
+        def forward_hook_fn(module, inp, out):
+            # Clone with requires_grad=True to ensure the tensor is connected to the computation graph
+            self.activations.append(out.clone().detach().requires_grad_(True))
+
+        def backward_hook_fn(module, grad_in, grad_out):
+            # Clone with requires_grad=True to ensure gradients are connected
+            self.gradients.append(grad_out[0].clone().detach().requires_grad_(True))
 
 
         self.target_layers = []
@@ -142,7 +133,8 @@ class CAMFormerModule(nn.Module):
         self.class_emb.to(self.device)
         self.transformer_encoder.to(self.device)
 
-    def forward(self, x, class_idx=None, do_gradcam=True, retain_graph=False):
+
+    def forward(self, x, class_idx=None, do_gradcam=False, retain_graph=False, eval=False):
         """
         :param x: input image batch, shape [B, 3, H, W].
         :param class_idx: optional integer specifying which class to "Grad-CAM" for.
@@ -151,33 +143,32 @@ class CAMFormerModule(nn.Module):
         :return: a list of reconstructed layer outputs (like gating masks), one per target layer.
         """
         x = x.to(self.device)       
-        self._clear_hooks_storage()  # Clear old activations/gradients            
-
-        # 1) Forward pass on the backbone
-        logits = self.model_arch(x)  # shape [B, #classes]     
-
+        self._clear_hooks_storage()  # Clear old activations/gradients       
         if do_gradcam:
-            # Identify the target class for Grad-CAM
-            if class_idx is None:
-                # For each sample, pick the top predicted class
-                predicted_class = logits.argmax(dim=1)  # [B]
-            else:
-                # Single class for the whole batch
-                predicted_class = torch.LongTensor([class_idx]*x.size(0)).to(self.device)
-     
-            # Build one-hot
-            oh = torch.zeros_like(logits)
-            for b_idx in range(x.size(0)):
-                oh[b_idx, predicted_class[b_idx]] = 1
+            with torch.enable_grad():
+                logits = self.model_arch(x)  # shape [B, #classes]       
+                # Identify the target class for Grad-CAM
+                if class_idx is None:
+                    # For each sample, pick the top predicted class
+                    predicted_class = logits.argmax(dim=1)  # [B]
+                else:
+                    # Single class for the whole batch
+                    predicted_class = torch.LongTensor([class_idx]*x.size(0)).to(self.device)
+        
+                # Build one-hot
+                oh = torch.zeros_like(logits)
+                for b_idx in range(x.size(0)):
+                    oh[b_idx, predicted_class[b_idx]] = 1
 
-            # Zero grads and do backward
-            self.model_arch.zero_grad()
-            logits.backward(gradient=oh, retain_graph=retain_graph)
+                # Zero grads and do backward
+                self.model_arch.zero_grad()
+                logits.backward(gradient=oh, retain_graph=retain_graph)
 
-            #reset grad so VGG isn't trained
-            self.model_arch.zero_grad()
+                #reset grad so VGG isn't trained
+                self.model_arch.zero_grad()
 
-            self.gradients.reverse()
+                self.gradients.reverse()
+
 
         # 2) Encode each layer’s activations into hidden_dim tokens
         layer_tokens = []
@@ -233,33 +224,13 @@ class CAMFormerModule(nn.Module):
             masks.append(channel_sum)
 
             cam += F.interpolate(channel_sum, size=(224,224), mode='bicubic', align_corners=False) 
-            cam_min, cam_max = cam.min(), cam.max()
-            norm_cam = (cam - cam_min) / (cam_max - cam_min + 1e-8)
-        # cam: [B,1,224,224]
-        threshold=0.5
-        bs = cam.size(0)
-        out_boxes = []
-        for i in range(bs):
-            cam_2d = norm_cam[i, 0]  # shape [224,224]
-            
-            print(f"cam_2d: {cam_2d.requires_grad}")
-            mask = (cam_2d >= threshold)
-            print(f"mask: {mask.requires_grad}")
-            coords = mask.nonzero(as_tuple=False)
-            print(f"coords: {coords.requires_grad}")
-            if coords.numel() == 0:
-                # no region found
-                out_boxes.append([0, 0, 1, 1])
-            else:
-                ymin = coords[:,0].min().item()
-                ymax = coords[:,0].max().item()
-                xmin = coords[:,1].min().item()
-                xmax = coords[:,1].max().item()
-                out_boxes.append([xmin, ymin, xmax, ymax])
-        bbox = torch.tensor(out_boxes, dtype=torch.float, device=cam.device)
-        print(f"bbox: {bbox.requires_grad}")
+        cam_min, cam_max = cam.min(), cam.max()
+        norm_cam = (cam - cam_min) / (cam_max - cam_min + 1e-8)
 
-        output_dict = dict(act=self.activations, grad=self.gradients, masks=reconstructed, cam=norm_cam, bbox=bbox)
+        norm_cam = norm_cam.squeeze(1)
+        # cam: [B,1,224,224]
+
+        output_dict = dict(act=self.activations, grad=self.gradients, masks=reconstructed, cam=norm_cam)
         return output_dict
 
     def _clear_hooks_storage(self):
@@ -271,6 +242,7 @@ class CAMFormerModule(nn.Module):
 
     def count_params(self):
         backbone_params = count_parameters(self.model_arch)
+        #backbone_params = 0
         enc_params = count_parameters(self.encoders)
         dec_params = count_parameters(self.decoders)
         emb_params = count_parameters(self.class_emb)
@@ -303,7 +275,6 @@ if __name__ == "__main__":
     gradients = output_dict["grad"]
     recon = output_dict["masks"]
     cam = output_dict["cam"]
-    bbox = output_dict["bbox"]
 
     
     print(len(recon))
@@ -311,4 +282,3 @@ if __name__ == "__main__":
         print(activations[i].shape, gradients[i].shape, recon[i].shape)
 
     print(cam.shape)
-    print(bbox.shape)
