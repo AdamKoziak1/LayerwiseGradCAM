@@ -7,6 +7,7 @@ from tqdm import tqdm
 from dataset import ImageNetLocDataset
 from camformerv2 import CAMFormerModule
 import wandb
+from torch.amp import autocast
 
 def box_l1_loss(pred_boxes, gt_boxes):
     """
@@ -59,11 +60,10 @@ def train_one_epoch(model, dataloader, optimizer, device, epoch, log_interval=10
         imgs = imgs.to(device)
         gt_masks = gt_masks.to(device)
 
-        # Forward pass
-        output_dict = model(imgs, class_idx=None, do_gradcam=True)
-
-        masks = output_dict["cam"]
-        loss = torch.nn.functional.mse_loss(masks, gt_masks)
+        with autocast(device_type='cuda', dtype=torch.bfloat16): 
+            output_dict = model(imgs, class_idx=None, do_gradcam=True)
+            masks = output_dict["cam"]
+            loss = torch.nn.functional.mse_loss(masks, gt_masks)
 
         optimizer.zero_grad()
         loss.backward()
@@ -71,13 +71,12 @@ def train_one_epoch(model, dataloader, optimizer, device, epoch, log_interval=10
 
         total_loss += loss.item()
 
-        # Log every `log_interval` batches
         if batch_idx % log_interval == 0 or batch_idx == num_batches:
             wandb.log({
                 "train_loss": loss.item(),
                 "epoch": epoch,
                 "batch": batch_idx,
-                "progress": batch_idx / num_batches  # Fraction of epoch completed
+                "progress": batch_idx / num_batches 
             })
     return total_loss / num_batches
 
@@ -118,6 +117,10 @@ def evaluate(model, dataloader, device, epoch, log_interval=100):
 def main():
     wandb.init(project="CAMFormer", name="My-CAMFormer-Run")
 
+    torch.backends.cuda.enable_mem_efficient_sdp(True)
+    torch.backends.cuda.enable_flash_sdp(True)
+    torch.backends.cuda.enable_math_sdp(False)
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     root = os.path.join("D:","imagenet","imagenet-object-localization-challenge","ILSVRC")
 
@@ -125,8 +128,8 @@ def main():
     train_dataset = ImageNetLocDataset(root, split="train", txt_file="train_loc.txt")
     val_dataset   = ImageNetLocDataset(root, split="val",   txt_file="val.txt")
 
-    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=4)
-    val_loader   = DataLoader(val_dataset,   batch_size=16, shuffle=False, num_workers=4)
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=4)
+    val_loader   = DataLoader(val_dataset,   batch_size=32, shuffle=False, num_workers=4)
     
     layer_names = ["features.4", "features.9", "features.16", "features.23", "features.30"] # all max pool layers
 
@@ -135,7 +138,7 @@ def main():
         hidden_dim=128,
         num_heads=4,
         num_layers=2,
-        num_classes=1000
+        num_classes=1000,
     )
     model.to(device)
 
