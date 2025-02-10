@@ -1,3 +1,5 @@
+# GGs this would take up terabytes
+
 import os
 import torch
 import torch.nn as nn
@@ -86,20 +88,22 @@ def precompute_and_save_features(root, split="val", txt_file="val.txt",
         batch_size_current = imgs.size(0)
         for i in range(batch_size_current):
             sample_dict = {
-                "act": [act[i].detach().cpu() for act in extractor.activations],
-                "grad": [grad[i].detach().cpu() for grad in extractor.gradients],
-                "bbox": bboxes[i].detach().cpu(),
-                "gt_mask": gt_masks[i].detach().cpu()
+                "act": [act[i].detach().cpu().to(torch.bfloat16) for act in extractor.activations],
+                #"grad": [grad[i].detach().cpu().to(torch.bfloat16) for grad in extractor.gradients],
+                "bbox": bboxes[i].detach().cpu().to(torch.bfloat16),
+                "gt_mask": gt_masks[i].detach().cpu().to(torch.bfloat16)
             }
             out_path = img_paths[i] + ".pth"
             torch.save(sample_dict, out_path)
+            print(out_path)
+            exit()
         extractor.clear_hooks()
 
 if __name__ == "__main__":
     root = os.path.join("D:", "imagenet", "imagenet-object-localization-challenge", "ILSVRC")
 
-    precompute_and_save_features(root, split="train", txt_file="train_loc.txt", batch_size=8, num_workers=4)
+    precompute_and_save_features(root, split="train", txt_file="train_loc.txt", batch_size=1, num_workers=1)
 
-    precompute_and_save_features(root, split="val", txt_file="val.txt", batch_size=8, num_workers=4)
+    #precompute_and_save_features(root, split="val", txt_file="val.txt", batch_size=1, num_workers=1)
 
-    precompute_and_save_features(root, split="test", txt_file="test.txt", batch_size=8, num_workers=4)
+    #precompute_and_save_features(root, split="test", txt_file="test.txt", batch_size=1, num_workers=1)

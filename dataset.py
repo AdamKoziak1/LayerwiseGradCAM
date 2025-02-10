@@ -51,9 +51,11 @@ class ImageNetLocDataset(Dataset):
             img = apply_transforms(img)
             # Parse XML for bounding boxes.
             ann_path = os.path.join(self.root, "Annotations", "CLS-LOC", self.split, image_id + ".xml")
-            tree = ET.parse(ann_path)
-            root_xml = tree.getroot()
-            obj = root_xml.find("object")
+            obj = None
+            if os.path.exists(ann_path):
+                tree = ET.parse(ann_path)
+                root_xml = tree.getroot()
+                obj = root_xml.find("object")
             if obj is None:
                 bbox = torch.tensor([0, 0, 1, 1], dtype=torch.float)
                 mask = torch.zeros((224, 224), dtype=torch.float32)

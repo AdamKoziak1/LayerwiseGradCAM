@@ -50,9 +50,6 @@ class CAMFormerModule(nn.Module):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model_arch.to(self.device)
 
-        #for param in self.model_arch.parameters():
-           #param.requires_grad = False
-
         # Containers for storing per-layer activations and gradients (Grad-CAM style)
         self.activations = []
         self.gradients = []
@@ -105,19 +102,10 @@ class CAMFormerModule(nn.Module):
         )
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 
-        # Step 5: (Re-)Register your "real" forward/backward hooks for Grad-CAM
-        # def forward_hook_fn(module, inp, out):
-        #     self.activations.append(out.clone().requires_grad_(True))
-
-        # def backward_hook_fn(module, grad_in, grad_out):
-        #     self.gradients.append(grad_out[0].clone().requires_grad_(True))
-
         def forward_hook_fn(module, inp, out):
-            # Clone with requires_grad=True to ensure the tensor is connected to the computation graph
             self.activations.append(out.clone().detach().requires_grad_(True))
 
         def backward_hook_fn(module, grad_in, grad_out):
-            # Clone with requires_grad=True to ensure gradients are connected
             self.gradients.append(grad_out[0].clone().detach().requires_grad_(True))
 
 
