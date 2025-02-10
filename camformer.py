@@ -27,6 +27,7 @@ class CAMFormerModule(nn.Module):
         hidden_dim=128,
         num_heads=4,
         num_layers=2,
+        dropout_rate=0.1,
         num_classes=1000,
     ):
         """
@@ -45,6 +46,7 @@ class CAMFormerModule(nn.Module):
         self.layer_names = layer_names
         self.hidden_dim = hidden_dim
         self.num_classes = num_classes
+        self.dropout_rate=dropout_rate
 
         # Move the backbone to GPU if available
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -97,6 +99,7 @@ class CAMFormerModule(nn.Module):
             d_model=hidden_dim,
             nhead=num_heads,
             dim_feedforward=hidden_dim * 4,
+            dropout=self.dropout_rate,
             batch_first=True, 
             dtype=torch.bfloat16
         )
@@ -123,7 +126,7 @@ class CAMFormerModule(nn.Module):
         self.transformer_encoder.to(self.device)
 
 
-    def forward(self, x, class_idx=None, do_gradcam=False, retain_graph=False, eval=False):
+    def forward(self, x, class_idx=None, do_gradcam=True, retain_graph=False, eval=False):
         """
         :param x: input image batch, shape [B, 3, H, W].
         :param class_idx: optional integer specifying which class to "Grad-CAM" for.
@@ -189,8 +192,6 @@ class CAMFormerModule(nn.Module):
 
         # 5) Split back into layer slices and decode
         offset = 1
-
-        
         reconstructed = []
         masks = []
         
