@@ -1,0 +1,8 @@
+544546 train
+50000 val
+100000 test
+
+6080kb each total
+2992kb just act or grad
+2kb	bbox
+100kb	mask

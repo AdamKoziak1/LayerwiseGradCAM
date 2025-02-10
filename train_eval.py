@@ -9,30 +9,6 @@ from camformerv2 import CAMFormerModule
 import wandb
 from torch.amp import autocast
 
-def box_l1_loss(pred_boxes, gt_boxes):
-    """
-    A simple L1 bounding box loss, each is shape [B,4].
-    """
-    return torch.nn.functional.l1_loss(pred_boxes, gt_boxes)
-
-@torch.no_grad()
-def compute_iou(pred_box, gt_box):
-    """
-    Compute IoU between two boxes: [xmin, ymin, xmax, ymax].
-    """
-    xA = max(pred_box[0], gt_box[0])
-    yA = max(pred_box[1], gt_box[1])
-    xB = min(pred_box[2], gt_box[2])
-    yB = min(pred_box[3], gt_box[3])
-    if xB < xA or yB < yA:
-        return 0.0
-    interArea = (xB - xA) * (yB - yA)
-    boxAArea = (pred_box[2] - pred_box[0]) * (pred_box[3] - pred_box[1])
-    boxBArea = (gt_box[2] - gt_box[0]) * (gt_box[3] - gt_box[1])
-    union = boxAArea + boxBArea - interArea
-    iou = interArea / union if union > 0 else 0.0
-    return iou
-
 @torch.no_grad()
 def compute_miou(pred_mask: torch.Tensor, gt_mask: torch.Tensor, threshold: float = 0.1):
     """
@@ -75,8 +51,7 @@ def train_one_epoch(model, dataloader, optimizer, device, epoch, log_interval=10
             wandb.log({
                 "train_loss": loss.item(),
                 "epoch": epoch,
-                "batch": batch_idx,
-                "progress": batch_idx / num_batches 
+                "batch": batch_idx
             })
     return total_loss / num_batches
 
@@ -101,35 +76,33 @@ def evaluate(model, dataloader, device, epoch, log_interval=100):
         loss = torch.nn.functional.mse_loss(masks, gt_masks)
         total_loss += loss.item()
 
-        # Log every `log_interval` batches
         if batch_idx % log_interval == 0 or batch_idx == num_batches:
             wandb.log({
                 "val_loss": loss.item(),
                 "val_iou": iou,
                 "epoch": epoch,
-                "val_batch": batch_idx,
-                "val_progress": batch_idx / num_batches  # Fraction of epoch completed
+                "val_batch": batch_idx
             })
 
     return total_iou / num_batches, total_loss / num_batches
 
-
 def main():
-    wandb.init(project="CAMFormer", name="My-CAMFormer-Run")
+    # wandb.init(project="CAMFormer", name="My-CAMFormer-Run")
 
     torch.backends.cuda.enable_mem_efficient_sdp(True)
     torch.backends.cuda.enable_flash_sdp(True)
     torch.backends.cuda.enable_math_sdp(False)
-
+    torch.cuda.init()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    root = os.path.join("D:","imagenet","imagenet-object-localization-challenge","ILSVRC")
+    root = os.path.join("/mnt","d","imagenet","imagenet-object-localization-challenge","ILSVRC")
+    #root = os.path.join("D:","imagenet","imagenet-object-localization-challenge","ILSVRC")
 
     # Example: train_loc.txt and val.txt are provided in ILSVRC/ImageSets/CLS-LOC
     train_dataset = ImageNetLocDataset(root, split="train", txt_file="train_loc.txt")
     val_dataset   = ImageNetLocDataset(root, split="val",   txt_file="val.txt")
 
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=4)
-    val_loader   = DataLoader(val_dataset,   batch_size=32, shuffle=False, num_workers=4)
+    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=8)
+    val_loader   = DataLoader(val_dataset,   batch_size=16, shuffle=False, num_workers=8)
     
     layer_names = ["features.4", "features.9", "features.16", "features.23", "features.30"] # all max pool layers
 
@@ -146,16 +119,16 @@ def main():
     optimizer = optim.Adam([p for p in model.parameters() if p.requires_grad], lr=learning_rate)
 
     # Start training
-    epochs = 10
+    epochs = 50
 
     wandb.init(project="CAMFormer", name="My-CAMFormer-Run", config={
-    "learning_rate": learning_rate,
-    "architecture": "VGG",
-    "dataset": "ImageNet",
-    "epochs": epochs,
+        "learning_rate": learning_rate,
+        "architecture": "VGG",
+        "dataset": "ImageNet",
+        "epochs": epochs,
     })
 
-    log_interval = 100
+    log_interval = 500
     best_val_loss = float("inf")
 
     for epoch in range(1, epochs+1):
