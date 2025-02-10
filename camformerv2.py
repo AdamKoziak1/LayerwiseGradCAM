@@ -87,20 +87,21 @@ class CAMFormerModule(nn.Module):
         self.decoders = nn.ModuleList()
         for layer_n in self.layer_names:
             c, _, _ = self.layer_shapes[layer_n]
-            enc = nn.Conv2d(c, hidden_dim, kernel_size=1)
-            dec = nn.Conv2d(hidden_dim, c, kernel_size=1)
+            enc = nn.Conv2d(c, hidden_dim, kernel_size=1, dtype=torch.bfloat16)
+            dec = nn.Conv2d(hidden_dim, c, kernel_size=1, dtype=torch.bfloat16)
             self.encoders.append(enc)
             self.decoders.append(dec)
 
         # Step 3: Build a class embedding for Grad-CAM usage (if needed)
-        self.class_emb = nn.Embedding(num_classes, hidden_dim)
+        self.class_emb = nn.Embedding(num_classes, hidden_dim, dtype=torch.bfloat16)
 
         # Step 4: Build a TransformerEncoder
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=hidden_dim,
             nhead=num_heads,
             dim_feedforward=hidden_dim * 4,
-            batch_first=True
+            batch_first=True, 
+            dtype=torch.bfloat16
         )
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 
