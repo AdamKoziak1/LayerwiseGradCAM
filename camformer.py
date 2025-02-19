@@ -256,7 +256,7 @@ if __name__ == "__main__":
         num_layers=2,
         num_classes=1000
     )
-
+    model.count_params()
     # Example usage
     images = torch.randn(5, 3, 224, 224).cuda()
 

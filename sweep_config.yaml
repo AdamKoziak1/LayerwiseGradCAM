@@ -5,20 +5,23 @@ metric:
   goal: minimize
 parameters:
   learning_rate:
-    distribution: uniform
-    min: 1e-5
-    max: 1e-3
+    distribution: log_uniform_values
+    min: 1e-6
+    max: 1e-2
   weight_decay:
-    values: [0, 1e-5, 1e-4, 1e-3]
-  grad_accum_steps:
-    values: [2, 4, 8]
+    distribution: log_uniform_values
+    min: 1e-8
+    max: 1e-3
   num_layers:
-    values: [1, 2, 3, 4]
+    values: [2, 4]
   num_heads:
-    values: [2, 4, 8]
+    values: [2, 4]
   hidden_dim:
-    values: [64, 128, 256]
+    values: [64, 128]
   dropout_rate:
     distribution: uniform
     min: 0.0
     max: 0.5
+early_terminate:
+  type: hyperband
+  min_iter: 3 

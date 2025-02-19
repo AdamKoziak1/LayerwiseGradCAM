@@ -35,21 +35,38 @@ class ImageNetLocDataset(Dataset):
 
     def __getitem__(self, idx):
         image_id = self.image_ids[idx]
-        # Construct the original image path
+        # Construct the original image path.
         img_path = os.path.join(self.root, "Data", "CLS-LOC", self.split, image_id)
 
+        # TODO update for new returns
         if self.use_precomputed:
             precomputed_path = img_path + ".pth"
             if not os.path.exists(precomputed_path):
                 raise FileNotFoundError(f"Precomputed file not found: {precomputed_path}")
             data = torch.load(precomputed_path)
-            # Return the loaded precomputed data along with the image path.
             return data, img_path
         else:
-            # Load the image normally.
-            img = Image.open(img_path + ".JPEG").convert("RGB")
-            img = apply_transforms(img)
-            # Parse XML for bounding boxes.
+            # Load the original image.
+            orig_img = Image.open(img_path + ".JPEG").convert("RGB")
+            orig_w, orig_h = orig_img.size
+
+            # Define the crop size (the final output size from our transforms)
+            crop_size = 224
+
+            # --- Compute what transforms.Resize(crop_size) does ---
+            # When passing an integer to transforms.Resize, the smaller edge is matched to that value.
+            if orig_w < orig_h:
+                resized_w = crop_size
+                resized_h = int(orig_h * (crop_size / orig_w))
+            else:
+                resized_h = crop_size
+                resized_w = int(orig_w * (crop_size / orig_h))
+            # --- Compute centre crop offset ---
+            # The centre crop will extract a (crop_size x crop_size) region from the centre.
+            offset_x = (resized_w - crop_size) / 2
+            offset_y = (resized_h - crop_size) / 2
+
+            # --- Parse XML for bounding box ---
             ann_path = os.path.join(self.root, "Annotations", "CLS-LOC", self.split, image_id + ".xml")
             obj = None
             if os.path.exists(ann_path):
@@ -57,23 +74,43 @@ class ImageNetLocDataset(Dataset):
                 root_xml = tree.getroot()
                 obj = root_xml.find("object")
             if obj is None:
-                bbox = torch.tensor([0, 0, 1, 1], dtype=torch.float)
-                mask = torch.zeros((224, 224), dtype=torch.float32)
+                # If no annotation, default to full image.
+                bbox = torch.tensor([0, 0, crop_size, crop_size], dtype=torch.float)
+                mask = torch.zeros((crop_size, crop_size), dtype=torch.float32)
             else:
                 bndbox = obj.find("bndbox")
                 xmin = int(bndbox.find("xmin").text)
                 ymin = int(bndbox.find("ymin").text)
                 xmax = int(bndbox.find("xmax").text)
                 ymax = int(bndbox.find("ymax").text)
-                bbox = torch.tensor([xmin, ymin, xmax, ymax], dtype=torch.float)
-                mask = torch.zeros((224, 224), dtype=torch.float32)
-                # Clamp coordinates and create mask.
-                xmin, ymin, xmax, ymax = bbox.long()
-                xmin = xmin.clamp(0, 224)
-                xmax = xmax.clamp(0, 224)
-                ymin = ymin.clamp(0, 224)
-                ymax = ymax.clamp(0, 224)
-                mask[ymin:ymax, xmin:xmax] = 1.0
-            # Return image, bbox, mask, and the original image path.
 
+                # --- Update the bounding box for the transformed image ---
+                # First, scale from original image to resized image coordinates.
+                scale_x = resized_w / orig_w
+                scale_y = resized_h / orig_h
+                resized_bbox = [xmin * scale_x, ymin * scale_y, xmax * scale_x, ymax * scale_y]
+                # Then, adjust for centre crop offset.
+                cropped_bbox = [
+                    resized_bbox[0] - offset_x,
+                    resized_bbox[1] - offset_y,
+                    resized_bbox[2] - offset_x,
+                    resized_bbox[3] - offset_y,
+                ]
+                # Clamp the bounding box to [0, crop_size].
+                cropped_bbox[0] = max(cropped_bbox[0], 0)
+                cropped_bbox[1] = max(cropped_bbox[1], 0)
+                cropped_bbox[2] = min(cropped_bbox[2], crop_size)
+                cropped_bbox[3] = min(cropped_bbox[3], crop_size)
+                bbox = torch.tensor(cropped_bbox, dtype=torch.float)
+
+                # Create the binary mask from the updated bbox.
+                mask = torch.zeros((crop_size, crop_size), dtype=torch.float32)
+                x1, y1, x2, y2 = bbox.long()
+                mask[y1:y2, x1:x2] = 1.0
+
+            # Now apply the transforms to get the final image.
+            # Note: apply_transforms internally does Resize(crop_size) followed by CenterCrop(crop_size).
+            img = apply_transforms(orig_img, size=crop_size)
+            
+            # Return the transformed image, scaled & cropped bbox, mask, image path and image id.
             return img, bbox, mask, img_path, image_id
