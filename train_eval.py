@@ -16,9 +16,9 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Train CAMFormer")
     parser.add_argument('--learning_rate', type=float, default=1e-5, help="Learning rate")
     parser.add_argument('--weight_decay', type=float, default=1e-5, help="Weight decay for AdamW")
-    parser.add_argument('--num_layers', type=int, default=2, help="Number of Transformer layers")
-    parser.add_argument('--num_heads', type=int, default=4, help="Number of attention heads in Transformer")
-    parser.add_argument('--hidden_dim', type=int, default=128, help="Hidden dimension size for Transformer")
+    parser.add_argument('--num_layers', type=int, default=1, help="Number of Transformer layers")
+    parser.add_argument('--num_heads', type=int, default=1, help="Number of attention heads in Transformer")
+    parser.add_argument('--hidden_dim', type=int, default=64, help="Hidden dimension size for Transformer")
     parser.add_argument('--dropout_rate', type=float, default=0.3, help="Dropout rate for Transformer layers")
     parser.add_argument('--epochs', type=int, default=15, help="Number of training epochs")
     parser.add_argument('--batch_size', type=int, default=16, help="Batch size")
@@ -53,7 +53,7 @@ def train_one_epoch(model, dataloader, optimizer, device, epoch):
         imgs = imgs.to(device)
         gt_masks = gt_masks.to(device)
 
-        with autocast(device_type='cuda', dtype=torch.bfloat16): 
+        with autocast(device_type='cuda', dtype=torch.float): 
             output_dict = model(imgs, class_idx=None, do_gradcam=True)
             masks = output_dict["cam"]
             loss = torch.nn.functional.mse_loss(masks, gt_masks)
@@ -74,7 +74,7 @@ def evaluate(model, dataloader, device, epoch):
         imgs = imgs.to(device)
         gt_masks = gt_masks.to(device)
 
-        with autocast(device_type='cuda', dtype=torch.bfloat16): 
+        with autocast(device_type='cuda', dtype=torch.float): 
             output_dict = model(imgs, class_idx=None, do_gradcam=True, eval=True)
             masks = output_dict["cam"] 
 
@@ -93,8 +93,8 @@ def get_root_path():
     if platform.system() == "Windows":
         root = os.path.join("D:", "imagenet", "imagenet-object-localization-challenge", "ILSVRC")
     else:  # Linux / WSL
-        root = os.path.join("/mnt", "d", "imagenet", "imagenet-object-localization-challenge", "ILSVRC")
-    
+        #root = os.path.join("/mnt", "d", "imagenet", "imagenet-object-localization-challenge", "ILSVRC")
+        root = os.path.join("/home", "adam", "Downloads", "ILSVRC")
     return root
 
 
@@ -102,9 +102,16 @@ def main():
     args = parse_args()
     wandb.init(project="CAMFormer", config=vars(args))
     torch.cuda.init()
-    torch.backends.cuda.enable_mem_efficient_sdp(True)
-    torch.backends.cuda.enable_flash_sdp(True)
-    torch.backends.cuda.enable_math_sdp(False)
+    # with torch.backends.cuda.sdp_kernel(enable_flash=True, enable_math=False, enable_mem_efficient=False):
+    #     print(torch.backends.cuda.flash_sdp_enabled())
+    #     # True
+    #     print(torch.backends.cuda.mem_efficient_sdp_enabled())
+    #     # False
+    #     print(torch.backends.cuda.math_sdp_enabled())
+    #     # False
+    #     # torch.backends.cuda.enable_mem_efficient_sdp(True)
+    #     # torch.backends.cuda.enable_flash_sdp(True)
+    #     # torch.backends.cuda.enable_math_sdp(False)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(device)
 
